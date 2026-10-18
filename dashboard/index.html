@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coalesce Live</title>
+<!--
+  Coalesce dashboard. One static file, no build step.
+  Reads Supabase directly (read-only RLS, Realtime on `entries` and `notes`).
+
+  Open it:   open dashboard/index.html              (live, needs SUPABASE_KEY below)
+             open "dashboard/index.html?demo=1"     (fake story on a loop, no network)
+  Overrides: ?url=https://xxx.supabase.co&key=sb_publishable_...   ?active=MINUTES
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #090c12;
+  --bg-2: #0f141d;
+  --card: #131a26;
+  --card-2: #182131;
+  --line: #243044;
+  --text: #f2f5fa;
+  --dim: #9aa7bb;
+  --faint: #5f6d83;
+  --cyan: #45d6ff;
+  --cyan-glow: rgba(69, 214, 255, .55);
+  --amber: #ffbe3d;
+  --green: #3ee59a;
+  --red: #ff6b6b;
+  --violet: #b18cff;
+  --claude: #ff9a6b;
+  --gemini: #7fb2ff;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: radial-gradient(1200px 700px at 20% -10%, #14203a 0%, transparent 60%), var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 20px;
+  line-height: 1.35;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+/* ---------- header ---------- */
+header {
+  display: flex; align-items: center; gap: 28px;
+  padding: 18px 32px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(9, 12, 18, .7);
+  backdrop-filter: blur(6px);
+}
+.brand { display: flex; align-items: center; gap: 14px; }
+.logo {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: conic-gradient(from 200deg, var(--cyan), var(--violet), var(--cyan));
+  display: grid; place-items: center;
+  box-shadow: 0 0 24px rgba(69, 214, 255, .35);
+}
+.logo::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--bg); }
+.brand h1 { margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -.02em; }
+.conn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 600 15px var(--mono); letter-spacing: .08em;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--dim);
+}
+.conn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); }
+.conn.live { color: var(--green); border-color: rgba(62, 229, 154, .35); }
+.conn.live .dot { background: var(--green); animation: blink 1.6s infinite; }
+.conn.demo { color: var(--violet); border-color: rgba(177, 140, 255, .4); }
+.conn.demo .dot { background: var(--violet); animation: blink 1.6s infinite; }
+.conn.off { color: var(--red); border-color: rgba(255, 107, 107, .4); }
+.conn.off .dot { background: var(--red); }
+@keyframes blink { 50% { opacity: .3; } }
+
+.counters { margin-left: auto; display: flex; gap: 14px; }
+.counter {
+  min-width: 170px; padding: 10px 18px; border-radius: 14px;
+  background: var(--bg-2); border: 1px solid var(--line);
+}
+.counter .num { font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.counter .lbl { font-size: 14px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; margin-top: 6px; }
+.counter.cyan .num { color: var(--cyan); }
+.counter.green .num { color: var(--green); }
+.counter.bump .num { animation: bump .6s ease-out; }
+@keyframes bump { 30% { transform: scale(1.25); text-shadow: 0 0 18px currentColor; } }
+
+/* ---------- layout ---------- */
+main {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 30vw);
+  min-height: 0;
+}
+#sessions-wrap { overflow-y: auto; padding: 28px 32px; }
+.section-title {
+  font-size: 15px; font-weight: 700; color: var(--dim);
+  text-transform: uppercase; letter-spacing: .14em; margin: 0 0 16px;
+}
+#sessions {
+  display: grid; gap: 22px;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  align-items: start;
+}
+.empty {
+  border: 2px dashed var(--line); border-radius: 18px; padding: 40px;
+  color: var(--dim); font-size: 22px; text-align: center;
+}
+
+/* ---------- session cards ---------- */
+.card {
+  position: relative;
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 22px 24px;
+  transition: border-color .4s, box-shadow .4s, opacity .5s, transform .5s;
+  animation: card-in .5s ease-out;
+}
+@keyframes card-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
+.card.leaving { opacity: 0; transform: scale(.96); }
+.card.pulse { animation: pulse 1s ease-out; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 190, 61, .55); border-color: var(--amber); }
+  100% { box-shadow: 0 0 0 18px rgba(255, 190, 61, 0); }
+}
+.card.sending { border-color: var(--cyan); box-shadow: 0 0 0 2px var(--cyan), 0 0 40px var(--cyan-glow); }
+.card.receiving { animation: receive 1.1s ease-out; border-color: var(--cyan); }
+@keyframes receive {
+  0% { box-shadow: 0 0 0 0 var(--cyan-glow), 0 0 60px var(--cyan-glow); transform: scale(1.025); }
+  100% { box-shadow: 0 0 0 26px rgba(69, 214, 255, 0), 0 0 0 transparent; transform: scale(1); }
+}
+.card-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.who { font-size: 32px; font-weight: 800; letter-spacing: -.02em; }
+.badge {
+  font: 700 14px var(--mono); text-transform: uppercase; letter-spacing: .08em;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid;
+}
+.badge.claude { color: var(--claude); border-color: rgba(255, 154, 107, .45); background: rgba(255, 154, 107, .1); }
+.badge.gemini { color: var(--gemini); border-color: rgba(127, 178, 255, .45); background: rgba(127, 178, 255, .1); }
+.status {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 16px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+}
+.status .dot { width: 10px; height: 10px; border-radius: 50%; }
+.status.in_progress { color: var(--amber); background: rgba(255, 190, 61, .12); }
+.status.in_progress .dot { background: var(--amber); animation: blink 1s infinite; }
+.status.done { color: var(--green); background: rgba(62, 229, 154, .12); }
+.status.done .dot { background: var(--green); }
+.branch {
+  margin-top: 10px; font: 600 18px var(--mono); color: var(--cyan);
+  display: flex; align-items: center; gap: 8px;
+}
+.branch svg { flex: none; }
+.prompt {
+  margin-top: 12px; font-size: 22px; font-weight: 500; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.prompt::before { content: "\201C"; color: var(--faint); }
+.prompt::after { content: "\201D"; color: var(--faint); }
+.chips { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: 500 15px var(--mono); padding: 5px 10px; border-radius: 8px;
+  background: #0c1119; border: 1px solid var(--line); color: var(--dim);
+}
+.chip.fact { color: var(--text); border-color: rgba(177, 140, 255, .45); background: rgba(177, 140, 255, .08); }
+.muted { color: var(--faint); font-size: 16px; }
+
+/* received note on a card */
+.inbox { margin-top: 18px; }
+.note {
+  position: relative;
+  border-radius: 14px; padding: 14px 16px;
+  background: rgba(69, 214, 255, .07);
+  border: 1px solid rgba(69, 214, 255, .4);
+}
+.note.fresh { animation: note-in 1.6s ease-out; }
+@keyframes note-in {
+  0% { opacity: 0; transform: translateY(-8px); background: rgba(69, 214, 255, .35); }
+  25% { opacity: 1; transform: none; }
+  100% { background: rgba(69, 214, 255, .07); }
+}
+.note-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 15px; font-weight: 700; color: var(--cyan); text-transform: uppercase; letter-spacing: .06em;
+}
+.note-head .src { font: 600 13px var(--mono); padding: 2px 8px; border-radius: 6px; background: rgba(69, 214, 255, .15); }
+.note-where { margin-top: 4px; font-size: 15px; color: var(--dim); }
+.note-where span { font-family: var(--mono); color: var(--cyan); }
+.note-text { margin-top: 8px; font-size: 18px; color: var(--text); }
+.note.slack { background: rgba(177, 140, 255, .08); border-color: rgba(177, 140, 255, .45); }
+.note.slack .note-head { color: var(--violet); }
+.note.slack .note-head .src { background: rgba(177, 140, 255, .18); }
+.reaction {
+  margin-top: 12px; padding: 10px 12px 10px 14px;
+  border-left: 3px solid var(--green); background: rgba(62, 229, 154, .07); border-radius: 0 10px 10px 0;
+  animation: note-in 1.2s ease-out;
+}
+.reaction .r-head { font-size: 14px; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: .06em; }
+.reaction .r-text { margin-top: 4px; font-size: 17px; }
+.reaction .r-prompt { margin-top: 4px; font-size: 15px; color: var(--dim); }
+.more { margin-top: 8px; font-size: 14px; color: var(--faint); }
+
+/* ---------- feed ---------- */
+aside {
+  border-left: 1px solid var(--line); background: rgba(15, 20, 29, .6);
+  display: flex; flex-direction: column; min-height: 0;
+}
+aside .section-title { padding: 28px 24px 0; }
+#feed { list-style: none; margin: 0; padding: 0 16px 24px; overflow-y: auto; flex: 1; }
+.item {
+  position: relative; padding: 14px 14px 14px 18px; margin-bottom: 10px;
+  border-radius: 12px; background: var(--card); border: 1px solid var(--line);
+}
+.item::before {
+  content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 4px;
+  background: var(--faint);
+}
+.item.new { animation: feed-in .6s ease-out; }
+@keyframes feed-in { from { opacity: 0; transform: translateX(24px); max-height: 0; } to { max-height: 400px; } }
+.item.start::before { background: var(--amber); }
+.item.done::before { background: var(--green); }
+.item.queued::before { background: rgba(69, 214, 255, .4); }
+.item.delivered::before { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+.item.delivered { border-color: rgba(69, 214, 255, .45); }
+.item.slack::before { background: var(--violet); }
+.item-top { display: flex; align-items: baseline; gap: 10px; }
+.item-title { font-size: 17px; font-weight: 700; }
+.item-time { margin-left: auto; font: 500 13px var(--mono); color: var(--faint); white-space: nowrap; }
+.item-body { margin-top: 6px; font-size: 16px; color: var(--dim); }
+.item-body b { color: var(--text); font-weight: 600; }
+.fact-line { margin-top: 6px; font: 500 15px var(--mono); color: var(--text); }
+.fact-line .fn { color: var(--violet); font-weight: 600; }
+.fact-line .arrow { color: var(--cyan); padding: 0 4px; }
+.fact-line .dimk { color: var(--faint); }
+
+/* ---------- delivery overlay ---------- */
+#fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 50; overflow: visible; }
+#caption {
+  position: fixed; left: 50%; bottom: 36px; transform: translate(-50%, 20px);
+  z-index: 60; pointer-events: none; opacity: 0;
+  padding: 16px 26px; border-radius: 16px;
+  background: rgba(9, 12, 18, .92); border: 1px solid var(--cyan);
+  box-shadow: 0 0 40px var(--cyan-glow);
+  font-size: 24px; font-weight: 700; white-space: nowrap;
+  transition: opacity .35s, transform .35s;
+}
+#caption.show { opacity: 1; transform: translate(-50%, 0); }
+#caption .c-arrow { color: var(--cyan); padding: 0 10px; }
+#caption .c-file { font-family: var(--mono); color: var(--cyan); }
+
+#setup {
+  position: fixed; inset: auto 32px 32px 32px; z-index: 70;
+  padding: 18px 22px; border-radius: 14px; font-size: 18px;
+  background: #2a1414; border: 1px solid var(--red); display: none;
+}
+#setup code { font-family: var(--mono); color: var(--amber); }
+
+@media (max-width: 900px) {
+  body { overflow: auto; display: block; }
+  header { flex-wrap: wrap; padding: 14px 16px; }
+  .counters { margin-left: 0; width: 100%; }
+  .counter { min-width: 0; flex: 1; }
+  main { display: block; }
+  #sessions-wrap { padding: 16px; }
+  #sessions { grid-template-columns: 1fr; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo" id="logo"></div>
+    <h1>Coalesce</h1>
+  </div>
+  <span class="conn" id="conn"><span class="dot"></span><span id="conn-text">CONNECTING</span></span>
+  <div class="counters">
+    <div class="counter" id="c-sessions"><div class="num">0</div><div class="lbl">Active sessions</div></div>
+    <div class="counter cyan" id="c-notes"><div class="num">0</div><div class="lbl">Notes delivered</div></div>
+    <div class="counter green" id="c-facts"><div class="num">0</div><div class="lbl">Facts captured</div></div>
+  </div>
+</header>
+
+<main>
+  <section id="sessions-wrap">
+    <h2 class="section-title">Agent sessions</h2>
+    <div id="sessions"></div>
+  </section>
+  <aside>
+    <h2 class="section-title">Live feed</h2>
+    <ul id="feed"></ul>
+  </aside>
+</main>
+
+<svg id="fx" aria-hidden="true">
+  <defs>
+    <linearGradient id="beam" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#45d6ff" stop-opacity=".15"/>
+      <stop offset=".7" stop-color="#45d6ff"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>
+<div id="caption"></div>
+<div id="setup"></div>
+
+<script>
+/* ======================= config ======================= */
+const SUPABASE_URL = "https://qryfgfgdlblzbflpeohe.supabase.co";
+const SUPABASE_KEY = "";   // paste the PUBLISHABLE key (sb_publishable_...) here. Never the secret key.
+const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js";
+
+const params = new URLSearchParams(location.search);
+const DEMO = params.has("demo");
+const URL_ = params.get("url") || SUPABASE_URL;
+const KEY = params.get("key") || SUPABASE_KEY;
+const ACTIVE_MS = (Number(params.get("active")) || 60) * 60 * 1000;
+
+/* ======================= state ======================= */
+const entries = new Map();   // id -> entry row
+const notes = new Map();     // id -> note row
+const cards = new Map();     // session_id -> card element
+const firstSeen = new Map(); // session_id -> ms, keeps card order stable
+const feedKeys = new Set();
+const freshNote = new Map(); // session_id -> note id that just arrived (animate once)
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ms = (t) => (t ? Date.parse(t) : 0);
+const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const agentName = (a) => (String(a || "").toLowerCase().includes("gemini") ? "gemini" : "claude");
+
+function ago(t) {
+  const s = Math.max(0, Math.round((Date.now() - ms(t)) / 1000));
+  if (s < 5) return "now";
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  return Math.floor(s / 3600) + "h";
+}
+
+/* ---------- derived ---------- */
+function latestBySession() {
+  const out = new Map();
+  for (const e of entries.values()) {
+    if (!e.session_id) continue;
+    const cur = out.get(e.session_id);
+    if (!cur || ms(e.created_at) > ms(cur.created_at) || (ms(e.created_at) === ms(cur.created_at) && e.id > cur.id)) out.set(e.session_id, e);
+  }
+  return out;
+}
+function isActive(e) {
+  if (!e || e.status === "stale") return false;
+  return Date.now() - ms(e.completed_at || e.created_at) < ACTIVE_MS;
+}
+function factKey(f) { return [f.file, f.qualname || f.symbol, f.change_type, f.after].join("|"); }
+
+/* "get_user: User.get() -> dict {email, id, name}" */
+function shape(s) {
+  if (s == null || s === "") return { main: "∅", extra: "" };
+  s = String(s).replace(/result of /g, "");
+  const m = s.match(/^dict with keys (.*)$/);
+  if (m) return { main: "dict", extra: "{" + m[1] + "}" };
+  return { main: s, extra: "" };
+}
+function factHTML(f) {
+  const name = esc(f.qualname || f.symbol || "?");
+  const t = f.change_type;
+  if (t === "return_changed") {
+    const b = shape(f.before), a = shape(f.after);
+    return `<span class="fn">${name}</span>: ${esc(b.main)}<span class="arrow">→</span>${esc(a.main)}${a.extra ? ` <span class="dimk">${esc(a.extra)}</span>` : ""}`;
+  }
+  if (t === "signature_changed") return `<span class="fn">${name}</span>(${esc(f.before)})<span class="arrow">→</span>(${esc(f.after)})`;
+  if (t === "added") return `<span class="arrow">+</span><span class="fn">${name}</span>(${esc(f.after || "")})`;
+  if (t === "removed") return `<span class="arrow">−</span><span class="fn">${name}</span> removed`;
+  return `<span class="fn">${name}</span> modified`;
+}
+function factChip(f) {
+  const t = f.change_type;
+  const n = f.symbol || f.qualname;
+  if (t === "return_changed") return `${n} → ${shape(f.after).main}`;
+  if (t === "signature_changed") return `${n}() signature`;
+  if (t === "added") return `+ ${n}`;
+  if (t === "removed") return `− ${n}`;
+  return `${n} changed`;
+}
+function noteBody(text) {
+  return String(text || "").replace(/^Teammate update \([^)]*\):\s*/, "").replace(/^Team note from [^:]*:\s*/, "");
+}
+/* What B's agent did next: the linked reaction entry if it has a summary,
+   otherwise B's turn that was running when the note landed (once it finishes). */
+function reactionFor(n) {
+  const linked = n.reaction_entry_id != null ? entries.get(n.reaction_entry_id) : null;
+  if (linked && linked.finalised_changes) return linked;
+  const t = ms(n.delivered_at);
+  let best = null;
+  for (const e of entries.values()) {
+    if (e.session_id !== n.to_session || e.status !== "done" || !e.finalised_changes) continue;
+    if (ms(e.completed_at) < t) continue;
+    if (!best || ms(e.completed_at) < ms(best.completed_at)) best = e;
+  }
+  return best || linked;
+}
+
+/* ======================= rendering ======================= */
+const BRANCH_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 7.5v9M18 10.5c0 4-6 3-11 6"/></svg>`;
+
+function cardHTML(e) {
+  const agent = agentName(e.agent);
+  const files = Array.isArray(e.files_changed) ? e.files_changed : [];
+  const facts = Array.isArray(e.facts) ? e.facts : [];
+  const status = e.status === "done" ? "done" : "in_progress";
+  const statusText = status === "done" ? "Turn done" : "Working";
+
+  const delivered = [...notes.values()]
+    .filter((n) => n.to_session === e.session_id && n.status === "delivered")
+    .sort((a, b) => ms(b.delivered_at) - ms(a.delivered_at));
+  let inbox = "";
+  if (delivered.length) {
+    const n = delivered[0];
+    const slack = n.source === "slack";
+    const fresh = freshNote.get(e.session_id) === n.id ? " fresh" : "";
+    const label = slack ? `Team note · ${esc(n.from_user || "human")}` : `From ${esc(n.from_user || "teammate")}'s agent`;
+    const where = n.target_file ? `<div class="note-where">Delivered before editing <span>${esc(n.target_file)}</span></div>` : "";
+    const src = { code_link: "code link", llm_judge: "judge", slack: "slack" }[n.source] || n.source;
+    const r = reactionFor(n);
+    const reaction = r && (r.finalised_changes || r.id !== e.id) ? `
+      <div class="reaction">
+        <div class="r-head">↳ ${esc(e.user_name)}'s agent ${r.finalised_changes ? "responded" : "next asked"}</div>
+        ${r.finalised_changes ? `<div class="r-text">${esc(clip(r.finalised_changes, 220))}</div>` : ""}
+        ${r.prompt && r.id !== e.id ? `<div class="r-prompt">Prompt: “${esc(clip(r.prompt, 120))}”</div>` : ""}
+      </div>` : "";
+    inbox = `<div class="inbox"><div class="note${slack ? " slack" : ""}${fresh}">
+        <div class="note-head">${label}<span class="src">${esc(src)}</span></div>${where}
+        <div class="note-text">${esc(clip(noteBody(n.text), 320))}</div>
+      </div>${reaction}${delivered.length > 1 ? `<div class="more">+ ${delivered.length - 1} earlier note${delivered.length > 2 ? "s" : ""}</div>` : ""}</div>`;
+  }
+
+  return `
+    <div class="card-top">
+      <span class="who">${esc(e.user_name || "unknown")}</span>
+      <span class="badge ${agent}">${agent}</span>
+      <span class="status ${status}"><span class="dot"></span>${statusText}</span>
+    </div>
+    <div class="branch">${BRANCH_ICON}${esc(e.branch || "unknown branch")}</div>
+    <div class="prompt">${esc(clip(e.prompt || "(no prompt)", 200))}</div>
+    ${files.length || facts.length ? `<div class="chips">
+      ${files.map((f) => `<span class="chip">${esc(f)}</span>`).join("")}
+      ${facts.slice(0, 4).map((f) => `<span class="chip fact">${esc(factChip(f))}</span>`).join("")}
+    </div>` : `<div class="chips"><span class="muted">No files changed yet</span></div>`}
+    ${inbox}`;
+}
+
+function renderSessions(pulseSid) {
+  const latest = latestBySession();
+  const wrap = $("#sessions");
+  const visible = [...latest.values()].filter(isActive);
+  for (const e of visible) if (!firstSeen.has(e.session_id)) firstSeen.set(e.session_id, ms(e.created_at) || Date.now());
+  visible.sort((a, b) => firstSeen.get(a.session_id) - firstSeen.get(b.session_id));
+  const keep = new Set(visible.map((e) => e.session_id));
+
+  for (const [sid, el] of cards) {
+    if (!keep.has(sid) && !el.classList.contains("leaving")) {
+      el.classList.add("leaving");
+      setTimeout(() => { el.remove(); cards.delete(sid); renderEmpty(); }, 500);
+    }
+  }
+  visible.forEach((e, i) => {
+    let el = cards.get(e.session_id);
+    if (!el || el.classList.contains("leaving")) {
+      if (el) el.remove();
+      el = document.createElement("article");
+      el.className = "card";
+      el.dataset.sid = e.session_id;
+      cards.set(e.session_id, el);
+    }
+    el.innerHTML = cardHTML(e);
+    if (wrap.children[i] !== el) wrap.insertBefore(el, wrap.children[i] || null);
+    if (pulseSid === e.session_id) pulse(el, "pulse");
+  });
+  renderEmpty();
+  renderCounters();
+}
+function renderEmpty() {
+  const wrap = $("#sessions");
+  const empty = wrap.querySelector(".empty");
+  const hasCards = [...cards.values()].some((c) => !c.classList.contains("leaving"));
+  if (!hasCards && !empty) wrap.innerHTML = `<div class="empty">No active agent sessions yet. Send a prompt in a repo with Coalesce hooks.</div>`;
+  if (hasCards && empty) empty.remove();
+}
+function pulse(el, cls) {
+  el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+  el.addEventListener("animationend", () => el.classList.remove(cls), { once: true });
+}
+
+const lastCount = {};
+function setCounter(id, value) {
+  const el = $(id);
+  if (lastCount[id] !== undefined && lastCount[id] !== value) pulse(el, "bump");
+  lastCount[id] = value;
+  el.querySelector(".num").textContent = value;
+}
+function renderCounters() {
+  const active = [...latestBySession().values()].filter(isActive).length;
+  const delivered = [...notes.values()].filter((n) => n.status === "delivered").length;
+  const facts = new Set();
+  for (const e of entries.values()) for (const f of e.facts || []) facts.add(factKey(f));
+  setCounter("#c-sessions", active);
+  setCounter("#c-notes", delivered);
+  setCounter("#c-facts", facts.size);
+}
+
+/* ---------- feed ---------- */
+function feedItem(key, kind, t, title, body, animate) {
+  if (feedKeys.has(key)) return;
+  feedKeys.add(key);
+  const li = document.createElement("li");
+  li.className = `item ${kind}${animate ? " new" : ""}`;
+  li.dataset.t = ms(t) || Date.now();
+  li.dataset.ts = t || new Date().toISOString();
+  li.innerHTML = `<div class="item-top"><span class="item-title">${title}</span><span class="item-time">${ago(t)}</span></div>${body ? `<div class="item-body">${body}</div>` : ""}`;
+  const feed = $("#feed");
+  const before = [...feed.children].find((c) => Number(c.dataset.t) < Number(li.dataset.t));
+  feed.insertBefore(li, before || null);
+  while (feed.children.length > 60) feed.lastChild.remove();
+}
+function feedFromEntry(e, animate) {
+  const who = esc(e.user_name || "unknown");
+  feedItem(`start:${e.id}`, "start", e.created_at, `${who} started a task`,
+    `<b>${esc(e.branch || "")}</b> · “${esc(clip(e.prompt, 110))}”`, animate);
+  if (e.status === "done") {
+    const facts = (e.facts || []).slice(0, 5).map((f) => `<div class="fact-line">${factHTML(f)}</div>`).join("");
+    const files = (e.files_changed || []).length ? `Changed <b>${esc(e.files_changed.join(", "))}</b>` : "No file changes";
+    feedItem(`done:${e.id}`, "done", e.completed_at || e.created_at, `${who}'s agent finished`,
+      `${files}${facts}${e.finalised_changes ? `<div style="margin-top:6px">${esc(clip(e.finalised_changes, 140))}</div>` : ""}`, animate);
+  }
+}
+function feedFromNote(n, animate) {
+  const slack = n.source === "slack";
+  const to = esc(n.to_user || "a session");
+  if (!slack) {
+    feedItem(`nq:${n.id}`, "queued", n.created_at, `Note queued for ${to}`,
+      `from <b>${esc(n.from_user || "teammate")}</b>'s change · ${esc(n.source === "llm_judge" ? "LLM judge" : "code link")}`, animate);
+  }
+  if (n.status === "delivered") {
+    const where = n.target_file ? ` before editing <b>${esc(n.target_file)}</b>` : " with its next prompt";
+    feedItem(`nd:${n.id}`, slack ? "slack delivered" : "delivered", n.delivered_at || n.created_at,
+      slack ? `Team note reached ${to}` : `Delivered to ${to}${n.target_file ? "" : ""}`,
+      `${slack ? `from <b>${esc(n.from_user || "Slack")}</b> · ` : `${esc(n.from_user || "teammate")} → ${to}${where}<br>`}${esc(clip(noteBody(n.text), 150))}`, animate);
+  }
+}
+setInterval(() => {
+  for (const li of $("#feed").children) li.querySelector(".item-time").textContent = ago(li.dataset.ts);
+  renderSessions();   // drop sessions that went idle
+}, 15000);
+
+/* ======================= delivery animation ======================= */
+let fxChain = Promise.resolve();
+function deliver(n) {
+  fxChain = fxChain.then(() => animateDelivery(n)).catch(() => {});
+}
+function centerOf(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, r };
+}
+function svgEl(tag, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+const sleep = (t) => new Promise((r) => setTimeout(r, t));
+const ease = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+async function animateDelivery(n) {
+  const toEl = cards.get(n.to_session);
+  const fromEl = (n.from_session && cards.get(n.from_session)) || $("#logo");
+  const finish = () => { freshNote.set(n.to_session, n.id); renderSessions(); setTimeout(() => freshNote.delete(n.to_session), 1800); };
+  if (!toEl) { finish(); return; }
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  toEl.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  await sleep(reduce ? 0 : 250);
+
+  const A = centerOf(fromEl), B = centerOf(toEl);
+  const fromLogo = fromEl === $("#logo");
+  // Arc over the tops of the cards (or around the right side if they share a column).
+  let p0, p1, cx, cy;
+  if (!fromLogo && Math.abs(A.x - B.x) < 60) {
+    p0 = { x: A.r.right - 8, y: A.y }; p1 = { x: B.r.right - 8, y: B.y };
+    cx = Math.max(A.r.right, B.r.right) + 170; cy = (p0.y + p1.y) / 2;
+  } else {
+    p0 = fromLogo ? { x: A.x, y: A.y } : { x: A.x, y: A.r.top + 8 };
+    p1 = { x: B.x, y: B.r.top + 8 };
+    const lift = Math.max(110, Math.min(240, Math.abs(p1.x - p0.x) * .35));
+    cx = (p0.x + p1.x) / 2; cy = Math.max(12, Math.min(p0.y, p1.y) - lift);
+  }
+  const d = `M${p0.x},${p0.y} Q${cx},${cy} ${p1.x},${p1.y}`;
+
+  const fx = $("#fx");
+  const grad = fx.querySelector("#beam");
+  grad.setAttribute("x1", p0.x); grad.setAttribute("y1", p0.y);
+  grad.setAttribute("x2", p1.x); grad.setAttribute("y2", p1.y);
+  const g = svgEl("g", {});
+  const halo = svgEl("path", { d, fill: "none", stroke: "#45d6ff", "stroke-width": 14, "stroke-linecap": "round", opacity: .18, filter: "url(#glow)" });
+  const beam = svgEl("path", { d, fill: "none", stroke: "url(#beam)", "stroke-width": 5, "stroke-linecap": "round", filter: "url(#glow)" });
+  const trail = [0, 1, 2, 3].map((i) => svgEl("circle", { r: 7 - i * 1.4, fill: "#45d6ff", opacity: .5 - i * .1 }));
+  const dot = svgEl("circle", { r: 10, fill: "#ffffff", filter: "url(#glow)" });
+  const spark = svgEl("circle", { r: 4, fill: "#ffffff" });
+  g.append(halo, beam, ...trail, dot, spark);
+  fx.append(g);
+  const L = beam.getTotalLength();
+  for (const p of [halo, beam]) { p.style.strokeDasharray = L; p.style.strokeDashoffset = L; }
+
+  if (fromEl !== $("#logo")) fromEl.classList.add("sending");
+  showCaption(n);
+
+  const dur = reduce ? 1 : 1300;
+  await new Promise((resolve) => {
+    const t0 = performance.now();
+    const hist = [];
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / dur), e = ease(t);
+      const off = L * (1 - e);
+      halo.style.strokeDashoffset = off; beam.style.strokeDashoffset = off;
+      const p = beam.getPointAtLength(L * e);
+      hist.unshift(p); hist.length = Math.min(hist.length, 12);
+      dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+      spark.setAttribute("cx", p.x); spark.setAttribute("cy", p.y);
+      trail.forEach((c, i) => { const q = hist[Math.min(hist.length - 1, (i + 1) * 3)]; c.setAttribute("cx", q.x); c.setAttribute("cy", q.y); });
+      if (t < 1) requestAnimationFrame(frame); else resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+
+  // arrival: ripple + receiving card flash + note appears
+  for (const [i, r0] of [[0, 0], [1, 0]]) {
+    const ring = svgEl("circle", { cx: p1.x, cy: p1.y, r: 8, fill: "none", stroke: "#45d6ff", "stroke-width": 3, filter: "url(#glow)" });
+    fx.append(ring);
+    ring.animate([{ r: 8, opacity: 1 }, { r: 110 + i * 40, opacity: 0 }], { duration: 900 + i * 300, delay: i * 120, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" })
+      .finished.then(() => ring.remove());
+  }
+  dot.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" });
+  trail.forEach((c) => c.remove()); spark.remove();
+  fromEl.classList.remove("sending");
+  finish();
+  const target = cards.get(n.to_session);
+  if (target) pulse(target, "receiving");
+  g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1400, delay: 500, fill: "forwards" }).finished.then(() => g.remove());
+  setTimeout(hideCaption, 2600);
+  await sleep(700);
+}
+
+let captionTimer;
+function showCaption(n) {
+  const c = $("#caption");
+  const from = n.source === "slack" ? `${esc(n.from_user || "Slack")} (Slack)` : `${esc(n.from_user || "Teammate")}'s agent`;
+  const to = `${esc(n.to_user || "teammate")}'s agent`;
+  const file = n.target_file ? ` <span style="color:var(--dim);font-weight:500">before</span> <span class="c-file">${esc(n.target_file)}</span>` : "";
+  c.innerHTML = `${from}<span class="c-arrow">→</span>${to}${file}`;
+  clearTimeout(captionTimer);
+  c.classList.add("show");
+}
+function hideCaption() { $("#caption").classList.remove("show"); }
+
+/* ======================= applying rows ======================= */
+function applyEntry(row, live) {
+  const prev = entries.get(row.id);
+  entries.set(row.id, { ...prev, ...row });
+  const e = entries.get(row.id);
+  if (live) feedFromEntry(e, true);
+  renderSessions(live ? e.session_id : undefined);
+}
+function applyNote(row, live) {
+  const prev = notes.get(row.id);
+  notes.set(row.id, { ...prev, ...row });
+  const n = notes.get(row.id);
+  if (!live) return;
+  feedFromNote(n, true);
+  const becameDelivered = n.status === "delivered" && (!prev || prev.status !== "delivered");
+  if (becameDelivered) deliver(n);
+  else renderSessions();
+}
+
+function setConn(cls, text) {
+  const c = $("#conn"); c.className = "conn " + cls; $("#conn-text").textContent = text;
+}
+
+/* ======================= live mode ======================= */
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.append(s); });
+}
+async function startLive() {
+  if (!KEY) {
+    setConn("off", "NO KEY");
+    const s = $("#setup");
+    s.style.display = "block";
+    s.innerHTML = `Add the Supabase <b>publishable</b> key: set <code>SUPABASE_KEY</code> near the bottom of dashboard/index.html, or open with <code>?key=sb_publishable_...</code>. Or try <code>?demo=1</code>.`;
+    renderSessions();
+    return;
+  }
+  try { await loadScript(SUPABASE_JS); } catch { setConn("off", "OFFLINE"); return; }
+  const sb = window.supabase.createClient(URL_, KEY);
+  const since = new Date(Date.now() - Math.max(ACTIVE_MS, 6 * 3600 * 1000)).toISOString();
+  const [er, nr] = await Promise.all([
+    sb.from("entries").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
+    sb.from("notes").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(300),
+  ]);
+  if (er.error || nr.error) {
+    setConn("off", "ERROR");
+    console.error(er.error || nr.error);
+    const s = $("#setup"); s.style.display = "block"; s.textContent = "Supabase query failed: " + (er.error || nr.error).message;
+    return;
+  }
+  for (const e of er.data) entries.set(e.id, e);
+  for (const n of nr.data) notes.set(n.id, n);
+  // reactions can point at entries older than the window
+  const missing = [...notes.values()].map((n) => n.reaction_entry_id).filter((id) => id != null && !entries.has(id));
+  if (missing.length) {
+    const { data } = await sb.from("entries").select("*").in("id", missing);
+    for (const e of data || []) entries.set(e.id, e);
+  }
+  for (const e of entries.values()) feedFromEntry(e, false);
+  for (const n of notes.values()) feedFromNote(n, false);
+  renderSessions();
+
+  sb.channel("coalesce-dashboard")
+    .on("postgres_changes", { event: "*", schema: "public", table: "entries" }, (p) => { if (p.new && p.new.id != null) applyEntry(p.new, true); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "notes" }, (p) => { if (p.new && p.new.id != null) applyNote(p.new, true); })
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") setConn("live", "LIVE");
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setConn("off", status.replace("_", " "));
+    });
+}
+
+/* ======================= demo mode (?demo=1) ======================= */
+/* Feeds fake rows through the same applyEntry/applyNote path as live data. */
+async function startDemo() {
+  setConn("demo", "DEMO");
+  const iso = () => new Date().toISOString();
+  const S = { p: "demo-poshitha", k: "demo-kent", g: "demo-gemini" };
+  const GET_USER = { file: "services/user.py", symbol: "get_user", qualname: "get_user", change_type: "return_changed",
+    before: "result of User.get()", after: "dict with keys email, id, name" };
+  const CACHE_ADDED = { file: "services/user.py", symbol: "clear_user_cache", qualname: "clear_user_cache", change_type: "added",
+    before: null, after: "" };
+
+  let base = 1000;
+  for (;;) {
+    entries.clear(); notes.clear(); freshNote.clear();
+    for (const el of cards.values()) el.remove();
+    cards.clear(); firstSeen.clear(); feedKeys.clear(); $("#feed").innerHTML = "";
+    renderSessions();
+    const id = (k) => base + k;
+    const wait = (t) => sleep(t);
+
+    await wait(1200);
+    applyEntry({ id: id(1), session_id: S.p, user_name: "Poshitha", agent: "claude", branch: "feature/caching",
+      prompt: "add caching to user lookups", status: "in_progress", files_changed: [], facts: [], created_at: iso() }, true);
+    await wait(2200);
+    applyEntry({ id: id(2), session_id: S.k, user_name: "Kent", agent: "claude", branch: "feature/checkout",
+      prompt: "build the checkout flow with tax and free shipping", status: "in_progress", files_changed: [], facts: [], created_at: iso() }, true);
+    await wait(2200);
+    applyEntry({ id: id(3), session_id: S.g, user_name: "Sam", agent: "gemini", branch: "feature/orders",
+      prompt: "add order history page", status: "in_progress", files_changed: [], facts: [], created_at: iso() }, true);
+    await wait(3000);
+    applyEntry({ id: id(1), status: "done", completed_at: iso(), files_changed: ["services/user.py"], facts: [GET_USER, CACHE_ADDED],
+      finalised_changes: "Added an LRU cache to get_user and changed it to return a plain dict so results are cacheable." }, true);
+    await wait(2600);
+    const note = { id: id(11), entry_id: id(1), from_user: "Poshitha", to_user: "Kent", from_session: S.p, to_session: S.k,
+      target_file: null, source: "code_link", status: "queued", created_at: iso(), reaction_entry_id: null,
+      text: "Teammate update (Poshitha, claude session on feature/caching, just now, not merged yet): get_user in services/user.py changed its return value. Before: result of User.get(). Now: dict with keys email, id, name. Your file checkout.py calls get_user on line 40." };
+    applyNote(note, true);
+    await wait(2400);
+    applyNote({ id: id(11), status: "delivered", delivered_at: iso(), target_file: "checkout.py" }, true);
+    await wait(4200);
+    applyEntry({ id: id(2), status: "done", completed_at: iso(), files_changed: ["checkout.py", "tests/test_checkout.py"], facts: [],
+      finalised_changes: "Updated checkout.py to read user[\"email\"] and user[\"name\"] since get_user now returns a dict. Tests pass." }, true);
+    await wait(3200);
+    applyEntry({ id: id(3), status: "done", completed_at: iso(), files_changed: ["orders.py"],
+      facts: [{ file: "orders.py", symbol: "order_history", qualname: "order_history", change_type: "signature_changed", before: "user_id", after: "user_id, limit=20" }],
+      finalised_changes: "Added pagination to order_history." }, true);
+    await wait(2600);
+    applyNote({ id: id(12), entry_id: null, from_user: "Poshitha", to_user: "Sam", from_session: null, to_session: S.g,
+      target_file: null, source: "slack", status: "queued", created_at: iso(), reaction_entry_id: null,
+      text: "Team note from Poshitha (via Slack): we're switching to dicts for user data." }, true);
+    await wait(600);
+    applyNote({ id: id(12), status: "delivered", delivered_at: iso() }, true);
+    await wait(7000);
+    base += 100;
+  }
+}
+
+if (DEMO) startDemo(); else startLive();
+</script>
+</body>
+</html>
