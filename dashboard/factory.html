@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coalesce Factory</title>
+<!--
+  Coalesce Factory: same data as dashboard/index.html (Kent's), new look.
+  Open it:   open dashboard/factory.html        (live, uses SUPABASE_KEY below)
+  Demo:      dashboard/factory.html?demo=1
+  Idle:      dashboard/factory.html?idle=1      (attract screen, no data)
+  Overrides: ?url=https://xxx.supabase.co&key=sb_publishable_...   ?active=MINUTES
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f3eee2; --paper2: #ebe4d3; --ink: #151412; --dim: #6d665a; --rule: #d6cdb8;
+  --beige: #e9e2cf; --beige-hi: #f5f0e2; --beige-lo: #c9bfa5; --beige-edge: #b3a88c;
+  --screen: #1b211e; --phos: #bff5a6; --phos-dim: #7fae6d;
+  --claude: #d4532a; --gemini: #2b66d1; --kraft: #c89a5b; --kraft-d: #a87a3e;
+  --r1: #61bb46; --r2: #fdb827; --r3: #f5821f; --r4: #e03a3e; --r5: #963d97; --r6: #009ddc;
+  --serif: "EB Garamond", Garamond, "Times New Roman", serif;
+  --pixel: "VT323", "Courier New", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: var(--serif); overflow-x: hidden; }
+.rainbow { height: 10px; background: linear-gradient(to bottom, var(--r1) 0 16.6%, var(--r2) 0 33.3%, var(--r3) 0 50%, var(--r4) 0 66.6%, var(--r5) 0 83.3%, var(--r6) 0); }
+
+/* ---------- header ---------- */
+header { display: flex; align-items: center; gap: 28px; padding: 16px 40px 14px; }
+#logo { width: 64px; height: 70px; flex: none; position: relative; border-radius: 9px 9px 5px 5px;
+  background: linear-gradient(var(--beige-hi), var(--beige)); border: 2px solid var(--beige-edge); box-shadow: 0 4px 0 var(--beige-lo); }
+#logo::before { content: ""; position: absolute; left: 9px; right: 9px; top: 8px; height: 34px; border-radius: 4px; background: var(--screen);
+  box-shadow: inset 0 0 0 3px #2a312d; }
+#logo::after { content: ""; position: absolute; left: 12px; bottom: 9px; width: 22px; height: 4px; background: var(--beige-edge); border-radius: 2px; }
+.brand h1 { margin: 0; font-size: 64px; line-height: .9; font-weight: 600; letter-spacing: -1.5px; }
+.brand p { margin: 6px 0 0; font-style: italic; font-size: 24px; color: var(--dim); }
+.conn { margin-left: 6px; align-self: center; font-family: var(--pixel); font-size: 26px; padding: 2px 14px; border: 2px solid var(--ink); border-radius: 4px; letter-spacing: 2px; }
+.conn .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; background: var(--dim); vertical-align: 1px; }
+.conn.live .dot { background: var(--r1); animation: blink 1.6s steps(2) infinite; }
+.conn.demo .dot { background: var(--r2); animation: blink 1.6s steps(2) infinite; }
+.conn.off { color: var(--r4); border-color: var(--r4); } .conn.off .dot { background: var(--r4); }
+.counters { margin-left: auto; display: flex; gap: 14px; }
+.counter { min-width: 150px; padding: 8px 18px 10px; background: var(--beige-hi); border: 2px solid var(--ink); border-radius: 6px; box-shadow: 4px 4px 0 var(--ink); text-align: left; }
+.counter .num { font-family: var(--pixel); font-size: 64px; line-height: .85; display: block; }
+.counter .lbl { font-size: 17px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); }
+.counter.bump { animation: bump .6s ease; }
+
+/* ---------- layout ---------- */
+main { display: grid; grid-template-columns: 1fr 400px; gap: 0; min-height: calc(100vh - 140px); }
+.floor { position: relative; padding: 14px 36px 30px; border-right: 2px solid var(--ink); }
+.section-title { font-size: 18px; letter-spacing: 3px; text-transform: uppercase; color: var(--dim); margin: 6px 0 14px; }
+#sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 22px 26px; align-items: start; position: relative; z-index: 2; }
+
+/* ---------- station ---------- */
+.card { position: relative; display: flex; flex-direction: column; align-items: center; animation: arrive .7s cubic-bezier(.2,.8,.2,1); }
+.card.leaving { animation: leave .5s ease forwards; }
+.mac { width: 262px; position: relative; }
+.mac-body { background: linear-gradient(180deg, var(--beige-hi), var(--beige) 60%, #e0d8c2); border: 2px solid var(--beige-edge); border-radius: 16px 16px 8px 8px; padding: 18px 20px 0; box-shadow: inset -6px 0 0 rgba(0,0,0,.04), 0 6px 0 var(--beige-lo); }
+.screen { height: 158px; background: var(--screen); border-radius: 10px; box-shadow: inset 0 0 0 5px #2b332f, inset 0 0 26px rgba(0,0,0,.6); padding: 14px 16px; color: var(--phos); font-family: var(--pixel); overflow: hidden; position: relative; }
+.screen::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 2px, transparent 2px 4px); pointer-events: none; border-radius: 10px; }
+.scr-branch { font-size: 25px; color: #fff6c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scr-task { font-size: 24px; line-height: 1.02; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.scr-status { position: absolute; left: 16px; bottom: 10px; font-size: 22px; color: var(--phos-dim); letter-spacing: 1px; }
+.scr-status.work { color: var(--r2); }
+.cursor { animation: blink 1s steps(2) infinite; }
+.chin { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 6px; }
+.chin .badge-stripes { width: 22px; height: 22px; border-radius: 4px; background: linear-gradient(var(--r1) 0 16.6%, var(--r2) 0 33.3%, var(--r3) 0 50%, var(--r4) 0 66.6%, var(--r5) 0 83.3%, var(--r6) 0); }
+.chin .slot { width: 110px; height: 8px; border-radius: 4px; background: #3a3630; box-shadow: inset 0 2px 2px #000; }
+.mac-foot { width: 190px; height: 18px; margin: 0 auto; background: linear-gradient(var(--beige-lo), var(--beige-edge)); border-radius: 0 0 10px 10px; }
+.card.sending .screen { box-shadow: inset 0 0 0 5px var(--r2), inset 0 0 40px rgba(253,184,39,.45); }
+.card.receiving .screen { animation: flash 1.4s ease; }
+.card.pulse .mac-body { animation: nudge .6s ease; }
+
+.plate { margin-top: 12px; display: flex; align-items: baseline; gap: 12px; }
+.plate .who { font-size: 38px; font-weight: 700; line-height: 1; }
+.badge { font-family: var(--pixel); font-size: 22px; padding: 0 10px; border-radius: 4px; color: #fff; letter-spacing: 1px; text-transform: uppercase; }
+.badge.claude { background: var(--claude); } .badge.gemini { background: var(--gemini); }
+.tray { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 340px; }
+.chip { font-family: var(--pixel); font-size: 22px; padding: 1px 10px; border: 2px solid var(--ink); border-radius: 4px; background: var(--beige-hi); }
+.chip.fact { background: var(--ink); color: var(--phos); }
+.muted { color: var(--dim); font-style: italic; font-size: 20px; }
+
+/* note printout */
+.inbox { margin-top: 12px; width: 100%; max-width: 340px; }
+.note { position: relative; background: #fffdf6; border: 2px solid var(--ink); padding: 12px 16px 14px; box-shadow: 5px 5px 0 var(--ink);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), 96% 100%, 92% calc(100% - 8px), 88% 100%, 84% calc(100% - 8px), 80% 100%, 76% calc(100% - 8px), 72% 100%, 68% calc(100% - 8px), 64% 100%, 60% calc(100% - 8px), 56% 100%, 52% calc(100% - 8px), 48% 100%, 44% calc(100% - 8px), 40% 100%, 36% calc(100% - 8px), 32% 100%, 28% calc(100% - 8px), 24% 100%, 20% calc(100% - 8px), 16% 100%, 12% calc(100% - 8px), 8% 100%, 4% calc(100% - 8px), 0 100%); }
+.note.fresh { animation: print 1.2s cubic-bezier(.2,.8,.2,1); }
+.note-head { font-family: var(--pixel); font-size: 22px; letter-spacing: 1px; text-transform: uppercase; display: flex; justify-content: space-between; gap: 10px; border-bottom: 2px dashed var(--rule); padding-bottom: 4px; margin-bottom: 6px; }
+.note-head .src { color: var(--claude); }
+.note.slack .note-head .src { color: var(--r5); }
+.note-where { font-size: 18px; color: var(--dim); }
+.note-where b { color: var(--ink); }
+.note-text { font-size: 21px; line-height: 1.22; }
+.reaction { margin-top: 10px; padding: 8px 14px; border-left: 5px solid var(--r1); background: rgba(97,187,70,.1); }
+.r-head { font-family: var(--pixel); font-size: 21px; color: #2f7a1c; }
+.r-text { font-size: 20px; line-height: 1.2; }
+.r-prompt { font-size: 18px; color: var(--dim); font-style: italic; }
+.more { margin-top: 6px; font-size: 17px; color: var(--dim); text-align: right; }
+
+/* ---------- conveyor ---------- */
+#belt { position: relative; margin-top: 26px; height: 46px; border: 3px solid var(--ink); border-radius: 23px; background: repeating-linear-gradient(90deg, #3b3832 0 22px, #55514a 22px 26px); background-size: 52px 100%; animation: belt 2.2s linear infinite; z-index: 1; }
+#belt.fast { animation-duration: .5s; }
+#belt::after { content: "CONVEYOR · NOTES TRAVEL HERE"; position: absolute; right: 26px; top: 50%; transform: translateY(-50%); font-family: var(--pixel); font-size: 20px; color: #d8d0bb; letter-spacing: 2px; }
+.pkg { position: fixed; left: 0; top: 0; width: 120px; height: 74px; z-index: 50; pointer-events: none; background: linear-gradient(var(--kraft), var(--kraft-d)); border: 3px solid var(--ink); border-radius: 4px; box-shadow: 0 0 0 6px rgba(253,184,39,.35), 0 0 34px 10px rgba(253,184,39,.55); display: flex; align-items: center; justify-content: center; }
+.pkg::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 14px; transform: translateX(-50%); background: rgba(255,255,255,.35); }
+.pkg span { position: relative; background: #fffdf6; border: 2px solid var(--ink); font-family: var(--pixel); font-size: 20px; padding: 0 6px; line-height: 1.05; text-align: center; }
+.punch { position: fixed; z-index: 40; pointer-events: none; padding: 6px 14px 6px 22px; background: #fbf3d6; border: 2px solid var(--ink); font-family: var(--pixel); font-size: 24px; white-space: nowrap; box-shadow: 4px 4px 0 var(--ink);
+  clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%, 0 14px); }
+.punch .fn, .fact-line .fn { color: var(--claude); } .punch .arrow, .fact-line .arrow { color: var(--r6); padding: 0 6px; }
+.dimk { color: var(--dim); }
+
+/* ---------- feed (continuous printer paper) ---------- */
+aside.feed { position: relative; padding: 20px 26px 30px 46px; background:
+  radial-gradient(circle at 16px 18px, var(--paper) 0 6px, transparent 7px) left top / 32px 36px repeat-y,
+  linear-gradient(90deg, transparent 31px, var(--rule) 31px 33px, #fffdf6 33px); }
+aside .section-title { margin-left: 4px; }
+#feed { list-style: none; margin: 0; padding: 0; }
+.item { padding: 12px 6px 12px 14px; border-bottom: 2px dashed var(--rule); border-left: 6px solid var(--dim); margin-bottom: 4px; }
+.item.new { animation: feedin .7s ease; }
+.item.start { border-left-color: var(--r2); } .item.done { border-left-color: var(--r1); }
+.item.queued { border-left-color: var(--r3); } .item.delivered { border-left-color: var(--r6); background: rgba(0,157,220,.07); }
+.item.slack { border-left-color: var(--r5); }
+.item-top { display: flex; justify-content: space-between; gap: 10px; }
+.item-title { font-size: 23px; font-weight: 700; }
+.item-time { font-family: var(--pixel); font-size: 21px; color: var(--dim); }
+.item-body { font-size: 19px; line-height: 1.25; margin-top: 2px; }
+.fact-line { font-family: var(--pixel); font-size: 22px; }
+
+/* ---------- caption + setup ---------- */
+#caption { position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 160%); z-index: 60; background: var(--ink); color: var(--paper); font-size: 32px; padding: 12px 30px; border-radius: 6px; box-shadow: 6px 6px 0 var(--r2); transition: transform .45s cubic-bezier(.2,.8,.2,1); white-space: nowrap; }
+#caption.show { transform: translate(-50%, 0); }
+#caption .c-arrow { color: var(--r2); padding: 0 14px; }
+#caption .c-file { font-family: var(--pixel); font-size: 32px; color: var(--phos); }
+#setup { display: none; position: fixed; left: 50%; top: 40%; transform: translateX(-50%); background: #fffdf6; border: 3px solid var(--ink); box-shadow: 8px 8px 0 var(--ink); padding: 22px 28px; font-size: 22px; max-width: 760px; z-index: 70; }
+#fx { display: none; }
+
+/* ---------- idle attract screen ---------- */
+.empty { grid-column: 1 / -1; position: relative; height: 560px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ascii { margin: 0; font-family: var(--pixel); font-size: 34px; line-height: 1; color: var(--ink); animation: float 4s ease-in-out infinite; text-shadow: 4px 4px 0 var(--r2); }
+.idle-sub { margin-top: 18px; font-style: italic; font-size: 28px; color: var(--dim); text-align: center; }
+.stage { position: relative; width: 640px; height: 170px; margin-top: 18px; border-bottom: 3px solid var(--ink); }
+.walker { position: absolute; bottom: 0; left: 0; width: 120px; animation: walk 6s ease-in-out infinite; }
+.walker .w-body { height: 112px; background: linear-gradient(var(--beige-hi), var(--beige)); border: 2px solid var(--beige-edge); border-radius: 12px 12px 6px 6px; padding: 10px 12px; animation: bob .5s ease-in-out infinite alternate; }
+.walker .w-screen { height: 62px; background: var(--screen); border-radius: 6px; position: relative; }
+.walker .eye { position: absolute; top: 16px; width: 10px; height: 14px; background: var(--phos); } .walker .eye.l { left: 26px; } .walker .eye.r { right: 26px; }
+.walker .mouth { position: absolute; left: 50%; bottom: 10px; width: 34px; height: 6px; margin-left: -17px; background: var(--phos); animation: chomp 6s steps(1) infinite; }
+.walker .w-foot { height: 10px; width: 80px; margin: 0 auto; background: var(--beige-edge); border-radius: 0 0 6px 6px; }
+.apple { position: absolute; bottom: 0; left: 470px; width: 74px; animation: eaten 6s steps(1) infinite; }
+
+/* ---------- keyframes ---------- */
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes bump { 30% { transform: scale(1.12) rotate(-2deg); } }
+@keyframes arrive { from { opacity: 0; transform: translateY(40px) scale(.9); } }
+@keyframes leave { to { opacity: 0; transform: translateY(30px) scale(.9); } }
+@keyframes nudge { 30% { transform: translateY(-8px); } 60% { transform: translateY(2px); } }
+@keyframes flash { 0%, 100% { box-shadow: inset 0 0 0 5px #2b332f, inset 0 0 26px rgba(0,0,0,.6); } 15%, 60% { box-shadow: inset 0 0 0 6px var(--r2), inset 0 0 60px rgba(253,184,39,.8); } }
+@keyframes print { from { clip-path: inset(0 0 100% 0); transform: translateY(-24px); } }
+@keyframes belt { to { background-position: 52px 0; } }
+@keyframes feedin { from { opacity: 0; transform: translateX(30px); background: rgba(253,184,39,.35); } }
+@keyframes float { 50% { transform: translateY(-14px); } }
+@keyframes bob { to { transform: translateY(-6px); } }
+@keyframes walk { 0% { transform: translateX(0); } 55%, 80% { transform: translateX(350px); } 100% { transform: translateX(0); } }
+@keyframes chomp { 0%, 55% { height: 6px; } 58% { height: 22px; } 62% { height: 4px; } 66% { height: 22px; } 70% { height: 4px; } 74% { height: 22px; } 78%, 100% { height: 6px; } }
+@keyframes eaten { 0%, 57% { clip-path: inset(0 0 0 0); opacity: 1; } 62% { clip-path: inset(0 0 0 22%); } 68% { clip-path: inset(0 0 0 50%); } 74% { clip-path: inset(0 0 0 78%); } 78% { opacity: 0; } 92% { opacity: 0; clip-path: inset(0 0 0 0); } 100% { opacity: 1; } }
+@media (max-width: 1100px) { main { grid-template-columns: 1fr; } .floor { border-right: 0; border-bottom: 2px solid var(--ink); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+
+/* ===================== Mac mono theme (overrides) ===================== */
+:root { --paper: #ffffff; --ink: #111111; --dim: #666666; --rule: #d4d4d4; --screen: #f2f2ea; --phos: #111111; --phos-dim: #555555; }
+.rainbow { display: none; }
+.pinstripe { height: 16px; background: repeating-linear-gradient(#111 0 2px, #fff 2px 4px); border-top: 2px solid #111; border-bottom: 2px solid #111; }
+.conn.live .dot, .conn.demo .dot { background: #111; }
+.conn.off { color: #111; border-color: #111; } .conn.off .dot { background: #111; }
+.counter { background: #fff; box-shadow: 3px 3px 0 #111; }
+.screen { color: #111; box-shadow: inset 0 0 0 4px #a8a498, inset 0 0 0 6px #111; }
+.screen::after { display: none; }
+.scr-branch { color: inherit; border-bottom: 2px solid currentColor; padding-bottom: 2px; }
+.scr-task { color: inherit; }
+.scr-status { color: #555; }
+.scr-status.work { color: #fff; background: #111; padding: 0 6px; }
+.chin .badge-stripes { width: 16px; height: 16px; border-radius: 3px; background: #9b9686; }
+.card.sending .screen { background: #111; color: #fff; }
+.badge, .badge.claude, .badge.gemini { background: #fff; color: #111; border: 2px solid #111; }
+.chip.fact { background: #111; color: #fff; }
+.note, #setup { background: #fff; }
+.note-head .src, .note.slack .note-head .src { color: #111; }
+.reaction { border-left-color: #111; background: #f3f3f3; } .r-head { color: #111; }
+.pkg { background: #fff; box-shadow: 5px 5px 0 #111; } .pkg::before { display: none; } .pkg span { border: 0; font-size: 22px; }
+.punch { background: #fff; }
+.punch .fn, .fact-line .fn { color: #111; text-decoration: underline; } .punch .arrow, .fact-line .arrow { color: #111; }
+.item { border-left-color: #c8c8c8 !important; background: none !important; } .item.delivered { border-left-color: #111 !important; }
+aside.feed { background: radial-gradient(circle at 16px 18px, #fff 0 6px, transparent 7px) left top / 32px 36px repeat-y, linear-gradient(90deg, #ededed 31px, #cfcfcf 31px 33px, #fff 33px); }
+#caption { box-shadow: 5px 5px 0 #bdbdbd; } #caption .c-arrow, #caption .c-file { color: #fff; }
+.ascii { text-shadow: 4px 4px 0 #e2e2e2; }
+@keyframes flash { 0%, 100% { background: var(--screen); color: #111; } 12%, 65% { background: #111; color: #fff; } }
+@keyframes feedin { from { opacity: 0; transform: translateX(30px); } }
+
+/* idle: white space, the name, a small computer chasing an apple */
+.floor:has(.empty) #belt, .floor:has(.empty) .section-title { display: none; }
+.empty { height: calc(100vh - 190px); min-height: 520px; overflow: hidden; }
+.empty .ascii { position: relative; z-index: 1; font-size: 40px; }
+.roam { position: absolute; inset: 0; }
+.bot { position: absolute; left: 0; top: 0; width: 66px; z-index: 2; will-change: transform; }
+.bot .b-body { height: 62px; background: linear-gradient(var(--beige-hi), var(--beige)); border: 2px solid #111; border-radius: 9px 9px 4px 4px; padding: 7px 8px; animation: bob .28s ease-in-out infinite alternate; }
+.bot .b-screen { height: 32px; background: var(--screen); border: 2px solid #111; border-radius: 3px; position: relative; }
+.bot .eye { position: absolute; top: 7px; width: 5px; height: 7px; background: #111; } .bot .eye.l { left: 11px; } .bot .eye.r { right: 11px; }
+.bot .mouth { position: absolute; left: 50%; bottom: 5px; width: 16px; height: 3px; margin-left: -8px; background: #111; }
+.bot.chomp .mouth { animation: chomp2 .22s steps(1) infinite; }
+.bot .b-foot { height: 6px; width: 40px; margin: 0 auto; background: #111; border-radius: 0 0 4px 4px; }
+.fruit { position: absolute; left: 0; top: 0; width: 38px; z-index: 1; will-change: transform; }
+.fruit svg { width: 100%; display: block; animation: float 2.4s ease-in-out infinite; transform-origin: 50% 80%; }
+.fruit.gone svg { animation: bite .9s steps(3) forwards; }
+#caption { transform: translate(-50%, 220px); } #caption.show { transform: translate(-50%, 0); } #caption:empty { visibility: hidden; }
+@keyframes chomp2 { 50% { height: 11px; } }
+@keyframes bite { to { clip-path: inset(0 0 0 100%); } }
+</style>
+</head>
+<body>
+<header>
+  <div id="logo" aria-hidden="true"></div>
+  <div class="brand">
+    <h1>Coalesce</h1>
+    <p>A factory floor where every agent knows what the others changed.</p>
+  </div>
+  <div id="conn" class="conn"><span class="dot"></span><span id="conn-text">CONNECTING</span></div>
+  <div class="counters">
+    <div class="counter" id="c-sessions"><span class="num">0</span><span class="lbl">Stations on</span></div>
+    <div class="counter" id="c-notes"><span class="num">0</span><span class="lbl">Notes delivered</span></div>
+    <div class="counter" id="c-facts"><span class="num">0</span><span class="lbl">Facts made</span></div>
+  </div>
+</header>
+<div class="pinstripe"></div>
+<main>
+  <section class="floor">
+    <div class="section-title">The factory floor · one station per agent session</div>
+    <div id="sessions"></div>
+    <div id="belt"></div>
+  </section>
+  <aside class="feed">
+    <div class="section-title">Printout · live feed</div>
+    <ul id="feed"></ul>
+  </aside>
+</main>
+<svg id="fx" aria-hidden="true"><defs><linearGradient id="beam"></linearGradient></defs></svg>
+<div id="caption"></div>
+<div id="setup"></div>
+
+<script>
+/* ======================= config ======================= */
+const SUPABASE_URL = "https://qryfgfgdlblzbflpeohe.supabase.co";
+const SUPABASE_KEY = "sb_publishable_aAbTlsfLFTMi_0Pd7gwFgA_n7_aXq6v";   // paste the PUBLISHABLE key (sb_publishable_...) here. Never the secret key.
+const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js";
+
+const params = new URLSearchParams(location.search);
+const DEMO = params.has("demo");
+const URL_ = params.get("url") || SUPABASE_URL;
+const KEY = params.get("key") || SUPABASE_KEY;
+const ACTIVE_MS = (Number(params.get("active")) || 60) * 60 * 1000;
+
+/* ======================= state ======================= */
+const entries = new Map();   // id -> entry row
+const notes = new Map();     // id -> note row
+const cards = new Map();     // session_id -> card element
+const firstSeen = new Map(); // session_id -> ms, keeps card order stable
+const feedKeys = new Set();
+const freshNote = new Map(); // session_id -> note id that just arrived (animate once)
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ms = (t) => (t ? Date.parse(t) : 0);
+const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const agentName = (a) => (String(a || "").toLowerCase().includes("gemini") ? "gemini" : "claude");
+
+function ago(t) {
+  const s = Math.max(0, Math.round((Date.now() - ms(t)) / 1000));
+  if (s < 5) return "now";
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  return Math.floor(s / 3600) + "h";
+}
+
+/* ---------- derived ---------- */
+function latestBySession() {
+  const out = new Map();
+  for (const e of entries.values()) {
+    if (!e.session_id) continue;
+    const cur = out.get(e.session_id);
+    if (!cur || ms(e.created_at) > ms(cur.created_at) || (ms(e.created_at) === ms(cur.created_at) && e.id > cur.id)) out.set(e.session_id, e);
+  }
+  return out;
+}
+function isActive(e) {
+  if (!e || e.status === "stale") return false;
+  return Date.now() - ms(e.completed_at || e.created_at) < ACTIVE_MS;
+}
+function factKey(f) { return [f.file, f.qualname || f.symbol, f.change_type, f.after].join("|"); }
+
+/* "get_user: User.get() -> dict {email, id, name}" */
+function shape(s) {
+  if (s == null || s === "") return { main: "∅", extra: "" };
+  s = String(s).replace(/result of /g, "");
+  const m = s.match(/^dict with keys (.*)$/);
+  if (m) return { main: "dict", extra: "{" + m[1] + "}" };
+  return { main: s, extra: "" };
+}
+function factHTML(f) {
+  const name = esc(f.qualname || f.symbol || "?");
+  const t = f.change_type;
+  if (t === "return_changed") {
+    const b = shape(f.before), a = shape(f.after);
+    return `<span class="fn">${name}</span>: ${esc(b.main)}<span class="arrow">→</span>${esc(a.main)}${a.extra ? ` <span class="dimk">${esc(a.extra)}</span>` : ""}`;
+  }
+  if (t === "signature_changed") return `<span class="fn">${name}</span>(${esc(f.before)})<span class="arrow">→</span>(${esc(f.after)})`;
+  if (t === "added") return `<span class="arrow">+</span><span class="fn">${name}</span>(${esc(f.after || "")})`;
+  if (t === "removed") return `<span class="arrow">−</span><span class="fn">${name}</span> removed`;
+  return `<span class="fn">${name}</span> modified`;
+}
+function factChip(f) {
+  const t = f.change_type;
+  const n = f.symbol || f.qualname;
+  if (t === "return_changed") return `${n} → ${shape(f.after).main}`;
+  if (t === "signature_changed") return `${n}() signature`;
+  if (t === "added") return `+ ${n}`;
+  if (t === "removed") return `− ${n}`;
+  return `${n} changed`;
+}
+function noteBody(text) {
+  return String(text || "").replace(/^Teammate update \([^)]*\):\s*/, "").replace(/^Team note from [^:]*:\s*/, "");
+}
+/* What B's agent did next: the linked reaction entry if it has a summary,
+   otherwise B's turn that was running when the note landed (once it finishes). */
+function reactionFor(n) {
+  const linked = n.reaction_entry_id != null ? entries.get(n.reaction_entry_id) : null;
+  if (linked && linked.finalised_changes) return linked;
+  const t = ms(n.delivered_at);
+  let best = null;
+  for (const e of entries.values()) {
+    if (e.session_id !== n.to_session || e.status !== "done" || !e.finalised_changes) continue;
+    if (ms(e.completed_at) < t) continue;
+    if (!best || ms(e.completed_at) < ms(best.completed_at)) best = e;
+  }
+  return best || linked;
+}
+
+/* ======================= rendering ======================= */
+const BRANCH_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 7.5v9M18 10.5c0 4-6 3-11 6"/></svg>`;
+
+/* ===== FACTORY RENDER: cardHTML (station) ===== */
+function cardHTML(e) {
+  const agent = agentName(e.agent);
+  const files = Array.isArray(e.files_changed) ? e.files_changed : [];
+  const facts = Array.isArray(e.facts) ? e.facts : [];
+  const done = e.status === "done";
+
+  const delivered = [...notes.values()]
+    .filter((n) => n.to_session === e.session_id && n.status === "delivered")
+    .sort((a, b) => ms(b.delivered_at) - ms(a.delivered_at));
+  let inbox = "";
+  if (delivered.length) {
+    const n = delivered[0];
+    const slack = n.source === "slack";
+    const fresh = freshNote.get(e.session_id) === n.id ? " fresh" : "";
+    const label = slack ? `Team note · ${esc(n.from_user || "human")}` : `From ${esc(n.from_user || "teammate")}'s station`;
+    const where = n.target_file ? `<div class="note-where">Arrived before editing <b>${esc(n.target_file)}</b></div>` : "";
+    const src = { code_link: "code link", llm_judge: "judge", slack: "slack" }[n.source] || n.source;
+    const r = reactionFor(n);
+    const reaction = r && (r.finalised_changes || r.id !== e.id) ? `
+      <div class="reaction">
+        <div class="r-head">↳ ${esc(e.user_name)}'s agent ${r.finalised_changes ? "responded" : "next asked"}</div>
+        ${r.finalised_changes ? `<div class="r-text">${esc(clip(r.finalised_changes, 200))}</div>` : ""}
+        ${r.prompt && r.id !== e.id ? `<div class="r-prompt">Prompt: “${esc(clip(r.prompt, 110))}”</div>` : ""}
+      </div>` : "";
+    inbox = `<div class="inbox"><div class="note${slack ? " slack" : ""}${fresh}">
+        <div class="note-head"><span>${label}</span><span class="src">${esc(src)}</span></div>${where}
+        <div class="note-text">${esc(clip(noteBody(n.text), 300))}</div>
+      </div>${reaction}${delivered.length > 1 ? `<div class="more">+ ${delivered.length - 1} earlier note${delivered.length > 2 ? "s" : ""}</div>` : ""}</div>`;
+  }
+
+  return `
+    <div class="mac">
+      <div class="mac-body">
+        <div class="screen">
+          <div class="scr-branch">› ${esc(e.branch || "unknown branch")}</div>
+          <div class="scr-task">${esc(clip(e.prompt || "(no prompt)", 120))}</div>
+          <div class="scr-status ${done ? "" : "work"}">${done ? "■ TURN DONE" : "▶ WORKING"}<span class="cursor">_</span></div>
+        </div>
+        <div class="chin"><span class="badge-stripes"></span><span class="slot"></span></div>
+      </div>
+      <div class="mac-foot"></div>
+    </div>
+    <div class="plate"><span class="who">${esc(e.user_name || "unknown")}</span><span class="badge ${agent}">${agent}</span></div>
+    <div class="tray">
+      ${files.length || facts.length
+        ? files.map((f) => `<span class="chip">${esc(f)}</span>`).join("") + facts.slice(0, 4).map((f) => `<span class="chip fact">${esc(factChip(f))}</span>`).join("")
+        : `<span class="muted">No files changed yet</span>`}
+    </div>
+    ${inbox}`;
+}
+
+function renderSessions(pulseSid) {
+  const latest = latestBySession();
+  const wrap = $("#sessions");
+  const visible = [...latest.values()].filter(isActive);
+  for (const e of visible) if (!firstSeen.has(e.session_id)) firstSeen.set(e.session_id, ms(e.created_at) || Date.now());
+  visible.sort((a, b) => firstSeen.get(a.session_id) - firstSeen.get(b.session_id));
+  const keep = new Set(visible.map((e) => e.session_id));
+
+  for (const [sid, el] of cards) {
+    if (!keep.has(sid) && !el.classList.contains("leaving")) {
+      el.classList.add("leaving");
+      setTimeout(() => { el.remove(); cards.delete(sid); renderEmpty(); }, 500);
+    }
+  }
+  visible.forEach((e, i) => {
+    let el = cards.get(e.session_id);
+    if (!el || el.classList.contains("leaving")) {
+      if (el) el.remove();
+      el = document.createElement("article");
+      el.className = "card";
+      el.dataset.sid = e.session_id;
+      cards.set(e.session_id, el);
+    }
+    el.innerHTML = cardHTML(e);
+    if (wrap.children[i] !== el) wrap.insertBefore(el, wrap.children[i] || null);
+    if (pulseSid === e.session_id) pulse(el, "pulse");
+  });
+  renderEmpty();
+  renderCounters();
+}
+/* ===== FACTORY RENDER: renderEmpty (idle attract screen) ===== */
+const ASCII = String.raw`  ____ ___    _    _     _____ ____   ____ _____
+ / ___/ _ \  / \  | |   | ____/ ___| / ___| ____|
+| |  | | | |/ _ \ | |   |  _| \___ \| |   |  _|
+| |__| |_| / ___ \| |___| |___ ___) | |___| |___
+ \____\___/_/   \_\_____|_____|____/ \____|_____|`;
+const APPLE = `<svg class="apple" viewBox="0 0 64 72" aria-hidden="true"><path d="M32 18c-4-6-14-8-20-2-8 8-6 26 2 38 5 8 11 13 18 10 7 3 13-2 18-10 8-12 10-30 2-38-6-6-16-4-20 2z" fill="#e03a3e" stroke="#151412" stroke-width="3"/><path d="M32 18c0-6 2-11 6-14" stroke="#151412" stroke-width="3" fill="none"/><path d="M36 12c6-6 14-6 16-2-4 6-12 6-16 2z" fill="#61bb46" stroke="#151412" stroke-width="2.5"/><ellipse cx="20" cy="32" rx="4" ry="8" fill="#fff" opacity=".45"/></svg>`;
+function renderEmpty() {
+  const wrap = $("#sessions");
+  const empty = wrap.querySelector(".empty");
+  const hasCards = [...cards.values()].some((c) => !c.classList.contains("leaving"));
+  if (!hasCards && !empty) {
+    wrap.innerHTML = `<div class="empty">
+      <pre class="ascii">${esc(ASCII)}</pre>
+      <div class="roam">
+        <div class="fruit">${APPLE}</div>
+        <div class="bot"><div class="b-body"><div class="b-screen"><span class="eye l"></span><span class="eye r"></span><span class="mouth"></span></div></div><div class="b-foot"></div></div>
+      </div>
+    </div>`;
+    startRoam(wrap.querySelector(".roam"));
+  }
+  if (hasCards && empty) empty.remove();
+}
+
+/* The little computer walks to the apple, eats it, and the next apple appears somewhere else. */
+function startRoam(box) {
+  const bot = box.querySelector(".bot"), fruit = box.querySelector(".fruit");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let x = 30, y = 30, ax = 0, ay = 0, face = 1, pause = 0;
+  function place() {
+    const W = box.clientWidth, H = box.clientHeight;
+    let tries = 0;
+    do { ax = 40 + Math.random() * Math.max(1, W - 120); ay = 30 + Math.random() * Math.max(1, H - 110); tries++; }
+    while (Math.hypot(ax - x, ay - y) < Math.min(W, H) * 0.4 && tries < 20);
+    fruit.classList.remove("gone");
+    fruit.style.transform = `translate(${ax}px, ${ay}px)`;
+  }
+  place();
+  function step() {
+    if (!box.isConnected) return;
+    if (pause > 0) {
+      if (--pause === 0) { bot.classList.remove("chomp"); place(); }
+    } else {
+      const tx = ax - 14, ty = ay - 20;
+      const dx = tx - x, dy = ty - y, d = Math.hypot(dx, dy);
+      if (d < 6) { pause = 60; bot.classList.add("chomp"); fruit.classList.add("gone"); }
+      else { const v = Math.min(d, 2.6); x += dx / d * v; y += dy / d * v; if (Math.abs(dx) > 3) face = dx > 0 ? 1 : -1; }
+    }
+    bot.style.transform = `translate(${x}px, ${y}px) scaleX(${face})`;
+    if (!reduce) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function pulse(el, cls) {
+  el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+  el.addEventListener("animationend", () => el.classList.remove(cls), { once: true });
+}
+
+const lastCount = {};
+function setCounter(id, value) {
+  const el = $(id);
+  if (lastCount[id] !== undefined && lastCount[id] !== value) pulse(el, "bump");
+  lastCount[id] = value;
+  el.querySelector(".num").textContent = value;
+}
+function renderCounters() {
+  const active = [...latestBySession().values()].filter(isActive).length;
+  const delivered = [...notes.values()].filter((n) => n.status === "delivered").length;
+  const facts = new Set();
+  for (const e of entries.values()) for (const f of e.facts || []) facts.add(factKey(f));
+  setCounter("#c-sessions", active);
+  setCounter("#c-notes", delivered);
+  setCounter("#c-facts", facts.size);
+}
+
+/* ---------- feed ---------- */
+function feedItem(key, kind, t, title, body, animate) {
+  if (feedKeys.has(key)) return;
+  feedKeys.add(key);
+  const li = document.createElement("li");
+  li.className = `item ${kind}${animate ? " new" : ""}`;
+  li.dataset.t = ms(t) || Date.now();
+  li.dataset.ts = t || new Date().toISOString();
+  li.innerHTML = `<div class="item-top"><span class="item-title">${title}</span><span class="item-time">${ago(t)}</span></div>${body ? `<div class="item-body">${body}</div>` : ""}`;
+  const feed = $("#feed");
+  const before = [...feed.children].find((c) => Number(c.dataset.t) < Number(li.dataset.t));
+  feed.insertBefore(li, before || null);
+  while (feed.children.length > 60) feed.lastChild.remove();
+}
+function feedFromEntry(e, animate) {
+  const who = esc(e.user_name || "unknown");
+  feedItem(`start:${e.id}`, "start", e.created_at, `${who} started a task`,
+    `<b>${esc(e.branch || "")}</b> · “${esc(clip(e.prompt, 110))}”`, animate);
+  if (e.status === "done") {
+    const facts = (e.facts || []).slice(0, 5).map((f) => `<div class="fact-line">${factHTML(f)}</div>`).join("");
+    const files = (e.files_changed || []).length ? `Changed <b>${esc(e.files_changed.join(", "))}</b>` : "No file changes";
+    feedItem(`done:${e.id}`, "done", e.completed_at || e.created_at, `${who}'s agent finished`,
+      `${files}${facts}${e.finalised_changes ? `<div style="margin-top:6px">${esc(clip(e.finalised_changes, 140))}</div>` : ""}`, animate);
+  }
+}
+function feedFromNote(n, animate) {
+  const slack = n.source === "slack";
+  const to = esc(n.to_user || "a session");
+  if (!slack) {
+    feedItem(`nq:${n.id}`, "queued", n.created_at, `Note queued for ${to}`,
+      `from <b>${esc(n.from_user || "teammate")}</b>'s change · ${esc(n.source === "llm_judge" ? "LLM judge" : "code link")}`, animate);
+  }
+  if (n.status === "delivered") {
+    const where = n.target_file ? ` before editing <b>${esc(n.target_file)}</b>` : " with its next prompt";
+    feedItem(`nd:${n.id}`, slack ? "slack delivered" : "delivered", n.delivered_at || n.created_at,
+      slack ? `Team note reached ${to}` : `Delivered to ${to}${n.target_file ? "" : ""}`,
+      `${slack ? `from <b>${esc(n.from_user || "Slack")}</b> · ` : `${esc(n.from_user || "teammate")} → ${to}${where}<br>`}${esc(clip(noteBody(n.text), 150))}`, animate);
+  }
+}
+setInterval(() => {
+  for (const li of $("#feed").children) li.querySelector(".item-time").textContent = ago(li.dataset.ts);
+  renderSessions();   // drop sessions that went idle
+}, 15000);
+
+/* ======================= delivery animation ======================= */
+let fxChain = Promise.resolve();
+function deliver(n) {
+  fxChain = fxChain.then(() => animateDelivery(n)).catch(() => {});
+}
+function centerOf(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, r };
+}
+function svgEl(tag, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+const sleep = (t) => new Promise((r) => setTimeout(r, t));
+const ease = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/* ===== FACTORY RENDER: facts come off the machine ===== */
+function ejectFacts(e) {
+  const el = cards.get(e.session_id);
+  const slot = el && el.querySelector(".slot");
+  if (!slot || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const r = slot.getBoundingClientRect();
+  (e.facts || []).slice(0, 3).forEach((f, i) => {
+    const p = document.createElement("div");
+    p.className = "punch";
+    p.innerHTML = factHTML(f);
+    document.body.append(p);
+    const w = p.offsetWidth;
+    const x = r.left + r.width / 2 - w / 2, y = r.top - 6;
+    p.animate([
+      { transform: `translate(${x}px, ${y}px) scaleY(.1)`, opacity: 0 },
+      { transform: `translate(${x}px, ${y + 30}px) scaleY(1)`, opacity: 1, offset: .15 },
+      { transform: `translate(${x}px, ${y + 70 + i * 52}px)`, opacity: 1, offset: .3 },
+      { transform: `translate(${x}px, ${y + 70 + i * 52}px)`, opacity: 1, offset: .85 },
+      { transform: `translate(${x}px, ${y + 110 + i * 52}px)`, opacity: 0 },
+    ], { duration: 4200, delay: i * 450, easing: "cubic-bezier(.2,.8,.2,1)", fill: "both" }).finished.then(() => p.remove());
+  });
+}
+
+/* ===== FACTORY RENDER: animateDelivery (package on the conveyor) ===== */
+async function animateDelivery(n) {
+  const toEl = cards.get(n.to_session);
+  const fromEl = (n.from_session && cards.get(n.from_session)) || $("#logo");
+  const finish = () => { freshNote.set(n.to_session, n.id); renderSessions(); setTimeout(() => freshNote.delete(n.to_session), 1800); };
+  if (!toEl) { finish(); return; }
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const belt = $("#belt");
+  belt.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  await sleep(reduce ? 0 : 350);
+
+  const A = fromEl.getBoundingClientRect(), B = toEl.getBoundingClientRect(), BL = belt.getBoundingClientRect();
+  const W = 120, H = 74;
+  const ax = A.left + A.width / 2 - W / 2, bx = B.left + B.width / 2 - W / 2;
+  const fromLogo = fromEl === $("#logo");
+  const ay = fromLogo ? A.bottom : A.top + 120;            // out of the source screen
+  const by = BL.top + BL.height / 2 - H + 6;               // riding on the belt
+  const ty = B.top + 120;                                  // into the target screen
+  const pts = [[ax, ay], [ax, by], [bx, by], [bx, ty]];
+  const seg = [Math.abs(by - ay), Math.abs(bx - ax), Math.abs(ty - by)];
+  const total = seg[0] + seg[1] + seg[2] || 1;
+  const offsets = [0, seg[0] / total, (seg[0] + seg[1]) / total, 1];
+
+  const pkg = document.createElement("div");
+  pkg.className = "pkg";
+  pkg.innerHTML = `<span>NOTE<br>→ ${esc(n.to_user || "teammate")}</span>`;
+  document.body.append(pkg);
+  if (!fromLogo) fromEl.classList.add("sending");
+  belt.classList.add("fast");
+  showCaption(n);
+
+  const dur = reduce ? 1 : Math.max(2400, Math.min(4200, total * 3.2));
+  await pkg.animate(pts.map(([x, y], i) => ({ transform: `translate(${x}px, ${y}px) rotate(${i === 1 || i === 2 ? 0 : -4}deg)`, offset: offsets[i] })),
+    { duration: dur, easing: "ease-in-out", fill: "forwards" }).finished;
+
+  pkg.animate([{ transform: `translate(${bx}px, ${ty}px) scale(1)`, opacity: 1 }, { transform: `translate(${bx}px, ${ty}px) scale(.3)`, opacity: 0 }],
+    { duration: 380, fill: "forwards" }).finished.then(() => pkg.remove());
+  belt.classList.remove("fast");
+  fromEl.classList.remove("sending");
+  finish();
+  const target = cards.get(n.to_session);
+  if (target) pulse(target, "receiving");
+  setTimeout(hideCaption, 2800);
+  await sleep(800);
+}
+
+let captionTimer;
+function showCaption(n) {
+  const c = $("#caption");
+  const from = n.source === "slack" ? `${esc(n.from_user || "Slack")} (Slack)` : `${esc(n.from_user || "Teammate")}'s agent`;
+  const to = `${esc(n.to_user || "teammate")}'s agent`;
+  const file = n.target_file ? ` <span style="color:var(--dim);font-weight:500">before</span> <span class="c-file">${esc(n.target_file)}</span>` : "";
+  c.innerHTML = `${from}<span class="c-arrow">→</span>${to}${file}`;
+  clearTimeout(captionTimer);
+  c.classList.add("show");
+}
+function hideCaption() { $("#caption").classList.remove("show"); }
+
+/* ======================= applying rows ======================= */
+function applyEntry(row, live) {
+  const prev = entries.get(row.id);
+  entries.set(row.id, { ...prev, ...row });
+  const e = entries.get(row.id);
+  if (live) feedFromEntry(e, true);
+  renderSessions(live ? e.session_id : undefined);
+  if (live && e.status === "done" && (!prev || prev.status !== "done") && (e.facts || []).length) setTimeout(() => ejectFacts(e), 120);
+}
+function applyNote(row, live) {
+  const prev = notes.get(row.id);
+  notes.set(row.id, { ...prev, ...row });
+  const n = notes.get(row.id);
+  if (!live) return;
+  feedFromNote(n, true);
+  const becameDelivered = n.status === "delivered" && (!prev || prev.status !== "delivered");
+  if (becameDelivered) deliver(n);
+  else renderSessions();
+}
+
+function setConn(cls, text) {
+  const c = $("#conn"); c.className = "conn " + cls; $("#conn-text").textContent = text;
+}
+
+/* ======================= live mode ======================= */
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.append(s); });
+}
+async function startLive() {
+  if (!KEY) {
+    setConn("off", "NO KEY");
+    const s = $("#setup");
+    s.style.display = "block";
+    s.innerHTML = `Add the Supabase <b>publishable</b> key: set <code>SUPABASE_KEY</code> near the bottom of dashboard/factory.html, or open with <code>?key=sb_publishable_...</code>. Or try <code>?demo=1</code>.`;
+    renderSessions();
+    return;
+  }
+  try { await loadScript(SUPABASE_JS); } catch { setConn("off", "OFFLINE"); return; }
+  const sb = window.supabase.createClient(URL_, KEY);
+  const since = new Date(Date.now() - Math.max(ACTIVE_MS, 6 * 3600 * 1000)).toISOString();
+  const [er, nr] = await Promise.all([
+    sb.from("entries").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
+    sb.from("notes").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(300),
+  ]);
+  if (er.error || nr.error) {
+    setConn("off", "ERROR");
+    console.error(er.error || nr.error);
+    const s = $("#setup"); s.style.display = "block"; s.textContent = "Supabase query failed: " + (er.error || nr.error).message;
+    return;
+  }
+  for (const e of er.data) entries.set(e.id, e);
+  for (const n of nr.data) notes.set(n.id, n);
+  // reactions can point at entries older than the window
+  const missing = [...notes.values()].map((n) => n.reaction_entry_id).filter((id) => id != null && !entries.has(id));
+  if (missing.length) {
+    const { data } = await sb.from("entries").select("*").in("id", missing);
+    for (const e of data || []) entries.set(e.id, e);
+  }
+  for (const e of entries.values()) feedFromEntry(e, false);
+  for (const n of notes.values()) feedFromNote(n, false);
+  renderSessions();
+
+  sb.channel("coalesce-dashboard")
+    .on("postgres_changes", { event: "*", schema: "public", table: "entries" }, (p) => { if (p.new && p.new.id != null) applyEntry(p.new, true); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "notes" }, (p) => { if (p.new && p.new.id != null) applyNote(p.new, true); })
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") setConn("live", "LIVE");
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setConn("off", status.replace("_", " "));
+    });
+}
+
+/* ======================= demo mode (?demo=1) ======================= */
+/* Feeds fake rows through the same applyEntry/applyNote path as live data. */
+async function startDemo() {
+  setConn("demo", "DEMO");
+  const iso = () => new Date().toISOString();
+  const S = { p: "demo-poshitha", k: "demo-kent", g: "demo-gemini" };
+  const GET_USER = { file: "services/user.py", symbol: "get_user", qualname: "get_user", change_type: "return_changed",
+    before: "result of User.get()", after: "dict with keys email, id, name" };
+  const CACHE_ADDED = { file: "services/user.py", symbol: "clear_user_cache", qualname: "clear_user_cache", change_type: "added",
+    before: null, after: "" };
+
+  let base = 1000;
+  for (;;) {
+    entries.clear(); notes.clear(); freshNote.clear();
+    for (const el of cards.values()) el.remove();
+    cards.clear(); firstSeen.clear(); feedKeys.clear(); $("#feed").innerHTML = "";
+    renderSessions();
+    const id = (k) => base + k;
+    const wait = (t) => sleep(t);
+
+    await wait(1200);
+    applyEntry({ id: id(1), session_id: S.p, user_name: "Poshitha", agent: "claude", branch: "feature/caching",
+      prompt: "add caching to user lookups", status: "in_progress", files_changed: [], facts: [], created_at: iso() }, true);
+    await wait(2200);
+    applyEntry({ id: id(2), session_id: S.k, user_name: "Kent", agent: "claude", branch: "feature/checkout",
+      prompt: "build the checkout flow with tax and free shipping", status: "in_progress", files_changed: [], facts: [], created_at: iso() }, true);
+    await wait(2200);
+    applyEntry({ id: id(3), session_id: S.g, user_name: "Sam", agent: "gemini", branch: "feature/orders",
+      prompt: "add order history page", status: "in_progress", files_changed: [], facts: [], created_at: iso() }, true);
+    await wait(3000);
+    applyEntry({ id: id(1), status: "done", completed_at: iso(), files_changed: ["services/user.py"], facts: [GET_USER, CACHE_ADDED],
+      finalised_changes: "Added an LRU cache to get_user and changed it to return a plain dict so results are cacheable." }, true);
+    await wait(2600);
+    const note = { id: id(11), entry_id: id(1), from_user: "Poshitha", to_user: "Kent", from_session: S.p, to_session: S.k,
+      target_file: null, source: "code_link", status: "queued", created_at: iso(), reaction_entry_id: null,
+      text: "Teammate update (Poshitha, claude session on feature/caching, just now, not merged yet): get_user in services/user.py changed its return value. Before: result of User.get(). Now: dict with keys email, id, name. Your file checkout.py calls get_user on line 40." };
+    applyNote(note, true);
+    await wait(2400);
+    applyNote({ id: id(11), status: "delivered", delivered_at: iso(), target_file: "checkout.py" }, true);
+    await wait(4200);
+    applyEntry({ id: id(2), status: "done", completed_at: iso(), files_changed: ["checkout.py", "tests/test_checkout.py"], facts: [],
+      finalised_changes: "Updated checkout.py to read user[\"email\"] and user[\"name\"] since get_user now returns a dict. Tests pass." }, true);
+    await wait(3200);
+    applyEntry({ id: id(3), status: "done", completed_at: iso(), files_changed: ["orders.py"],
+      facts: [{ file: "orders.py", symbol: "order_history", qualname: "order_history", change_type: "signature_changed", before: "user_id", after: "user_id, limit=20" }],
+      finalised_changes: "Added pagination to order_history." }, true);
+    await wait(2600);
+    applyNote({ id: id(12), entry_id: null, from_user: "Poshitha", to_user: "Sam", from_session: null, to_session: S.g,
+      target_file: null, source: "slack", status: "queued", created_at: iso(), reaction_entry_id: null,
+      text: "Team note from Poshitha (via Slack): we're switching to dicts for user data." }, true);
+    await wait(600);
+    applyNote({ id: id(12), status: "delivered", delivered_at: iso() }, true);
+    await wait(7000);
+    base += 100;
+  }
+}
+
+if (params.has("idle")) { setConn("demo", "IDLE"); renderSessions(); } else if (DEMO) startDemo(); else startLive();
+</script>
+</body>
+</html>
