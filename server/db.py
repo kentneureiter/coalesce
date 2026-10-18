@@ -7,6 +7,7 @@ Two tables in Supabase (live schema is the source of truth, see server/tools/dum
 import os
 from pathlib import Path
 
+import psycopg
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -29,8 +30,11 @@ def init() -> None:
             max_size=5,
             open=True,
             # autocommit: every statement commits on its own. prepare_threshold=None
-            # keeps it working through Supabase's pooler.
-            kwargs={"autocommit": True, "row_factory": dict_row, "prepare_threshold": None},
+            # keeps it working through Supabase's pooler. Keepalives stop idle
+            # connections from being silently dropped.
+            kwargs={"autocommit": True, "row_factory": dict_row, "prepare_threshold": None,
+                    "keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10,
+                    "keepalives_count": 3},
         )
 
 
@@ -43,8 +47,14 @@ def close() -> None:
 
 def _all(sql: str, params=()) -> list[dict]:
     init()
-    with _pool.connection() as conn:
-        return conn.execute(sql, params).fetchall()
+    try:
+        with _pool.connection() as conn:
+            return conn.execute(sql, params).fetchall()
+    except psycopg.OperationalError:
+        # The pooled connection was dropped while idle. The pool discards it;
+        # retry once on a fresh one.
+        with _pool.connection() as conn:
+            return conn.execute(sql, params).fetchall()
 
 
 def _one(sql: str, params=()) -> dict | None:

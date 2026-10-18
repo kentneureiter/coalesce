@@ -75,6 +75,8 @@ try:
     print("  injected context:\n    " + (note or "(empty)"))
     check("note mentions get_user and checkout.py", "get_user" in note and "checkout.py" in note)
     check("note is from Poshitha's session", "Poshitha" in note and "feature/caching" in note)
+    check("note has the AST fact (before -> now)",
+          "Before: result of User.get(). Now: dict with keys email, id, name." in note)
 
     print("\n4. Edge cases")
     again = post("/relevant", {**S3, "file_path": "checkout.py", "content": CHECKOUT, "tool_name": "Edit"})["context"]

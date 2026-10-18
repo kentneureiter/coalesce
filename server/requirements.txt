@@ -1,0 +1,10 @@
+# Coalesce server. Install: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt
+anthropic==1.15.0
+fastapi==0.143.3
+httpx==0.28.1
+psycopg[binary,pool]==3.3.6
+psycopg-pool==3.3.3
+pytest==9.1.1
+python-dotenv==1.2.4
+slack_bolt==1.30.0
+uvicorn[standard]==0.54.0
