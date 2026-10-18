@@ -13,6 +13,8 @@ Optional: if SUPABASE_URL and SUPABASE_SERVICE_KEY are set, each prompt is
 also copied into the Supabase `entries` table (in a background thread, so
 /task stays under the 500 ms budget).
 
+Keys: put SUPABASE_URL / SUPABASE_SERVICE_KEY in coalesce/.env (see .env.example).
+
 Run (from the coalesce repo):
   python3 scripts/dev_server.py            # listens on 0.0.0.0:8787
 """
@@ -26,6 +28,22 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def load_env(path):
+    """Minimal .env loader (stdlib only). Real environment variables win."""
+    if not os.path.isfile(path):
+        return
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_env(os.path.join(os.path.dirname(HERE), ".env"))  # coalesce/.env
 DB_PATH = os.environ.get("COALESCE_DEV_DB", os.path.join(HERE, "dev.db"))
 PORT = int(os.environ.get("PORT", "8787"))
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
