@@ -1,7 +1,10 @@
 __pycache__/
-*.pyc
-.env
-server/.env
-*.db
 .coalesce/
 .DS_Store
+.env
+.venv/
+*.db
+*.pyc
+CLAUDE.md
+server/.env
+server/coalesce.db
