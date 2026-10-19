@@ -2,9 +2,7 @@
 
 **Live context for coding agents working in parallel.** When one agent changes a function, every other agent that depends on it finds out right before its next edit, not at the PR.
 
-Winner of **Most Innovative** at [HACKATHON NAME].
-
-![How Coalesce works](docs/workflow.png)
+Winner of Most Innovative at Lehigh's aws hackathon.
 
 ## Why
 
