@@ -6,7 +6,9 @@ Winner of Most Innovative at Lehigh's aws hackathon.
 
 ## Why
 
-In our software engineering class this semester, we built part of our team project against the schema we'd all agreed on, but the backend didn't follow it. Nobody found out until the PR, after the work was done.
+In one of our software engineering classes this semester, we built part of our team project against the schema we'd all agreed on, but the backend didn't follow it. Nobody found out until the PR, after the work was done.
+
+One of us ran into the same problem this past summer during a software engineering internship, this time with coding agents in the loop. She built the AI layer and the frontend while her co-intern built the backend, and everything between them ran through one JSON schema. When one side changed a field, the other side didn't find out until the PR. Because both were developing with agents, changes piled up faster than either of them could track, and every merge meant untangling differences neither had seen coming.
 
 Coding agents make this worse. Teams now run several agents in parallel, each isolated on its own branch, and they can't see each other. One agent changes what `get_user` returns, and another keeps calling it the old way. Git only catches it when the same line is edited twice. Two correct changes that break each other stay invisible until review.
 
