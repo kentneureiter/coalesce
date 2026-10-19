@@ -1,5 +1,6 @@
 # Coalesce 
-**Winner of Most Innovative Project at Lehigh’s AWS Hackathon**
+**Winner of Most Innovative Project at Lehigh’s AWS Hackathon.**
+
 **Live context for coding agents working in parallel.** When one agent changes a function, every other agent that depends on it finds out right before its next edit, not at the PR.
 
 
